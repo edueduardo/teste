@@ -1,0 +1,479 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatar        String?
+  phone         String?
+  role          UserRole  @default(CLIENT)
+  verified      Boolean   @default(false)
+  banned        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  clientProfile ClientProfile?
+  lawyerProfile LawyerProfile?
+  accounts      Account[]
+  sessions      Session[]
+  consultationsAsClient Consultation[] @relation("ConsultationClient")
+  consultationsAsLawyer Consultation[] @relation("ConsultationLawyer")
+  casesAsClient Case[] @relation("CaseClient")
+  casesAsLawyer Case[] @relation("CaseLawyer")
+  documents     Document[]
+  messages      Message[]
+  notifications Notification[]
+  payments      Payment[]
+  subscriptions Subscription[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model ClientProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  cpf         String?  @unique
+  rg          String?
+  birthDate   DateTime?
+  nationality String?
+  occupation  String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("client_profiles")
+}
+
+model LawyerProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  oab             String   @unique
+  oabState        String
+  specialty       String[]
+  biography       String?
+  education       String?
+  experience      String?
+  officeAddress   String?
+  officePhone     String?
+  consultationFee Decimal?
+  available       Boolean  @default(true)
+  rating          Decimal  @default(0)
+  totalReviews    Int      @default(0)
+  verified        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("lawyer_profiles")
+}
+
+model Consultation {
+  id          String           @id @default(cuid())
+  clientId    String
+  lawyerId    String
+  title       String
+  description String?
+  status      ConsultationStatus @default(PENDING)
+  type        ConsultationType @default(ONLINE)
+  price       Decimal
+  duration    Int              @default(60) // minutes
+  scheduledAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  client User @relation("ConsultationClient", fields: [clientId], references: [id])
+  lawyer User @relation("ConsultationLawyer", fields: [lawyerId], references: [id])
+  payments   Payment[] @relation("PaymentConsultation")
+
+  @@map("consultations")
+}
+
+model Case {
+  id             String     @id @default(cuid())
+  clientId       String
+  lawyerId       String?
+  consultationId String?
+  title          String
+  description    String?
+  status         CaseStatus @default(OPEN)
+  priority       Priority   @default(MEDIUM)
+  category       String
+  estimatedValue Decimal?
+  actualValue    Decimal?
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  client       User         @relation("CaseClient", fields: [clientId], references: [id])
+  lawyer       User?        @relation("CaseLawyer", fields: [lawyerId], references: [id])
+  documents    Document[]
+  messages     Message[]
+  tasks        Task[]
+  events       Event[]
+
+  @@map("cases")
+}
+
+model Document {
+  id          String       @id @default(cuid())
+  caseId      String
+  userId      String
+  title       String
+  description String?
+  fileName    String
+  filePath    String
+  fileSize    Int
+  mimeType    String
+  type        DocumentType @default(OTHER)
+  status      DocumentStatus @default(DRAFT)
+  signed      Boolean      @default(false)
+  signedAt    DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("documents")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  caseId    String
+  senderId  String
+  content   String
+  type      MessageType @default(TEXT)
+  fileUrl   String?
+  read      Boolean     @default(false)
+  readAt    DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  case   Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  caseId      String
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  assignedTo  String?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("tasks")
+}
+
+model Event {
+  id          String     @id @default(cuid())
+  caseId      String
+  title       String
+  description String?
+  type        EventType  @default(OTHER)
+  status      EventStatus @default(SCHEDULED)
+  startDate   DateTime
+  endDate     DateTime?
+  location    String?
+  attendees   String[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("events")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  content   String
+  type      NotificationType @default(INFO)
+  read      Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Payment {
+  id            String      @id @default(cuid())
+  userId        String
+  consultationId String?
+  caseId        String?
+  amount        Decimal
+  status        PaymentStatus @default(PENDING)
+  method        PaymentMethod @default(CREDIT_CARD)
+  stripeId      String?
+  paidAt        DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  consultation Consultation? @relation("PaymentConsultation", fields: [consultationId], references: [id])
+  
+  @@map("payments")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  plan      SubscriptionPlan
+  status    SubscriptionStatus @default(ACTIVE)
+  stripeId  String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  canceledAt DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  lawyerId  String
+  clientId  String
+  rating    Int
+  comment   String?
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([lawyerId, clientId])
+  @@map("reviews")
+}
+
+model BlogPost {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   @db.Text
+  excerpt     String?
+  coverImage  String?
+  published   Boolean  @default(false)
+  featured    Boolean  @default(false)
+  authorId    String
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("blog_posts")
+}
+
+model FAQ {
+  id         String   @id @default(cuid())
+  question   String
+  answer     String   @db.Text
+  category   String
+  order      Int      @default(0)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("faqs")
+}
+
+model Settings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String  @db.Text
+
+  @@map("settings")
+}
+
+// Enums
+enum UserRole {
+  CLIENT
+  LAWYER
+  ADMIN
+}
+
+enum ConsultationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELED
+}
+
+enum ConsultationType {
+  ONLINE
+  IN_PERSON
+  PHONE
+}
+
+enum CaseStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CLIENT
+  WAITING_LAWYER
+  COMPLETED
+  CLOSED
+  CANCELED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum DocumentType {
+  CONTRACT
+  IDENTITY
+  PROOF
+  COURT_DOCUMENT
+  EVIDENCE
+  OTHER
+}
+
+enum DocumentStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  REJECTED
+  SIGNED
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  IMAGE
+  AUDIO
+  VIDEO
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  CANCELED
+}
+
+enum EventType {
+  HEARING
+  MEETING
+  DEADLINE
+  OTHER
+}
+
+enum EventStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  APPOINTMENT
+  MESSAGE
+  DOCUMENT
+  PAYMENT
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  PIX
+  CASH
+}
+
+enum SubscriptionPlan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELED
+  EXPIRED
+}
